@@ -1,0 +1,18 @@
+# robots.txt for Quick Image Tools
+
+User-agent: *
+Allow: /
+
+# Main image tool pages
+Allow: /resize-image
+Allow: /compress-image
+Allow: /crop-image
+Allow: /convert-image
+Allow: /rotate-flip-image
+Allow: /background-remover
+
+# Disallow internal/API paths
+Disallow: /api/
+
+# Sitemap location
+Sitemap: https://quick-image-tools.ai.studio/sitemap.xml
