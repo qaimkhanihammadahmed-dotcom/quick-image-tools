@@ -1,97 +1,49 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { removeBackground } from '@imgly/background-removal';
 
-type Props = {
-  imageMeta: any;
-  onImageReady?: (result: Blob) => Promise<void> | void;
-};
-
 export default function BackgroundRemoverPanel({
   imageMeta,
   onImageReady,
-}: Props) {
-  const [resultUrl, setResultUrl] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState('');
-  const [currentFile, setCurrentFile] = useState<File | null>(
+}: any) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [selectedFile, setSelectedFile] = useState<File | null>(
     imageMeta?.file || null
   );
 
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [originalPreview, setOriginalPreview] = useState<string | null>(null);
+  const [resultUrl, setResultUrl] = useState<string | null>(null);
 
-  // Keep the selected file synced with the main editor
+  const [processing, setProcessing] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [status, setStatus] = useState('');
+
   useEffect(() => {
     if (imageMeta?.file) {
-      setCurrentFile(imageMeta.file);
-    } else {
-      setCurrentFile(null);
+      setSelectedFile(imageMeta.file);
+      setResultUrl(null);
+      setProgress(0);
+      setStatus('');
     }
-  }, [imageMeta?.file]);
+  }, [imageMeta]);
 
-  // Clean up generated result URL
+  // Create preview for selected image
   useEffect(() => {
-    return () => {
-      if (resultUrl) {
-        URL.revokeObjectURL(resultUrl);
-      }
-    };
-  }, [resultUrl]);
-
-  const handleRemove = async () => {
-    if (!currentFile) {
-      alert('Please select an image first.');
+    if (!selectedFile) {
+      setOriginalPreview(null);
       return;
     }
 
-    setLoading(true);
-    setResultUrl(null);
-    setStatus('Processing image...');
+    const url = URL.createObjectURL(selectedFile);
+    setOriginalPreview(url);
 
-    try {
-      const blob = await removeBackground(currentFile, {
-        model: 'isnet_fp16',
-        output: {
-          format: 'image/png',
-          quality: 1,
-        },
-        progress: () => {
-          setStatus('Processing image...');
-        },
-      });
+    return () => {
+      URL.revokeObjectURL(url);
+    };
+  }, [selectedFile]);
 
-      const url = URL.createObjectURL(blob);
-
-      setResultUrl(url);
-      setStatus('Background removed successfully!');
-
-      if (onImageReady) {
-        await onImageReady(blob);
-      }
-    } catch (error: any) {
-      setStatus('Background removal failed.');
-
-      alert(
-        `Background removal failed:\n${
-          error?.message || 'Unknown error'
-        }`
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Open the file picker for another image
-  const handleAddAnotherImage = () => {
-    if (loading) return;
-
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-      fileInputRef.current.click();
-    }
-  };
-
-  // Handle newly selected image
-  const handleNewImage = (
+  // Select image
+  const handleSelectImage = (
     event: React.ChangeEvent<HTMLInputElement>
   ) => {
     const file = event.target.files?.[0];
@@ -99,100 +51,215 @@ export default function BackgroundRemoverPanel({
     if (!file) return;
 
     if (!file.type.startsWith('image/')) {
-      alert('Please select an image file.');
+      alert('براہِ کرم صرف تصویر منتخب کریں۔');
       return;
     }
 
+    setSelectedFile(file);
+    setResultUrl(null);
+    setProgress(0);
+    setStatus('');
+
+    // Allow selecting the same image again
+    event.target.value = '';
+  };
+
+  // Open file selector
+  const openFileSelector = () => {
+    fileInputRef.current?.click();
+  };
+
+  // Remove background
+  const handleRemoveBackground = async () => {
+    if (!selectedFile || processing) return;
+
+    setProcessing(true);
+    setProgress(0);
+    setStatus('Background remove ہو رہا ہے...');
+
+    try {
+      const resultBlob = await removeBackground(selectedFile, {
+        model: 'isnet_fp16',
+        device: 'gpu',
+
+        progress: (
+          key: string,
+          current: number,
+          total: number
+        ) => {
+          if (total > 0) {
+            const percent = Math.round(
+              (current / total) * 100
+            );
+
+            setProgress(percent);
+          }
+
+          if (key) {
+            setStatus('Background remove ہو رہا ہے...');
+          }
+        },
+      } as any);
+
+      // Create transparent PNG URL
+      const transparentUrl = URL.createObjectURL(resultBlob);
+
+      setResultUrl(transparentUrl);
+      setProgress(100);
+      setStatus('Background کامیابی سے remove ہو گیا۔');
+
+      // Send result to parent if required
+      if (onImageReady) {
+        await onImageReady(resultBlob);
+      }
+    } catch (error: any) {
+      console.error('Background removal failed:', error);
+
+      setProgress(0);
+      setStatus('');
+
+      alert(
+        error?.message ||
+          'Background remove نہیں ہو سکا۔ براہِ کرم دوبارہ کوشش کریں۔'
+      );
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  // Download transparent PNG
+  const handleDownload = () => {
+    if (!resultUrl) return;
+
+    const link = document.createElement('a');
+
+    link.href = resultUrl;
+    link.download = 'background-removed.png';
+
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Select another image
+  const handleAnotherImage = () => {
     if (resultUrl) {
       URL.revokeObjectURL(resultUrl);
     }
 
-    setCurrentFile(file);
     setResultUrl(null);
+    setSelectedFile(null);
+    setOriginalPreview(null);
+    setProgress(0);
     setStatus('');
 
-    // Tell App.tsx that a new image was selected
-    window.dispatchEvent(
-      new CustomEvent('quick-image-tools:new-background-image', {
-        detail: {
-          file,
-        },
-      })
-    );
+    setTimeout(() => {
+      fileInputRef.current?.click();
+    }, 50);
   };
 
   return (
-    <div className="w-full space-y-4">
-      {/* Hidden file picker */}
+    <div className="w-full space-y-5">
+
+      {/* Hidden file input */}
       <input
         ref={fileInputRef}
         type="file"
         accept="image/*"
-        onChange={handleNewImage}
-        className="hidden"
+        hidden
+        onChange={handleSelectImage}
       />
 
-      {/* Remove Background button */}
-      <button
-        type="button"
-        onClick={handleRemove}
-        disabled={loading || !currentFile}
-        className="relative w-full overflow-hidden bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-bold py-3 px-5 rounded-lg transition-colors"
-      >
-        {/* Moving progress line */}
-        {loading && (
-          <div className="absolute inset-0 overflow-hidden pointer-events-none">
-            <div
-              className="absolute top-0 bottom-0 left-0 w-1/3 bg-blue-800/70"
-              style={{
-                animation:
-                  'backgroundRemovalProgress 1.4s linear infinite',
-              }}
-            />
-          </div>
-        )}
-
-        <span className="relative z-10">
-          {loading ? 'Processing...' : 'Remove Background'}
-        </span>
-      </button>
-
-      {/* Progress animation */}
-      <style>
-        {`
-          @keyframes backgroundRemovalProgress {
-            0% {
-              transform: translateX(-120%);
-            }
-
-            100% {
-              transform: translateX(420%);
-            }
-          }
-        `}
-      </style>
-
-      {/* Processing status */}
-      {status && !resultUrl && (
-        <p className="text-sm text-neutral-500 text-center">
-          {status}
-        </p>
+      {/* STEP 1 - Select Image */}
+      {!selectedFile && !resultUrl && (
+        <button
+          type="button"
+          onClick={openFileSelector}
+          className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-5 rounded-xl font-bold transition"
+        >
+          Select Image
+        </button>
       )}
 
-      {/* Result */}
-      {resultUrl && (
-        <div className="space-y-3">
-          <p className="text-green-600 font-bold text-sm">
-            Background removed successfully!
-          </p>
+      {/* STEP 2 - Selected Image Preview */}
+      {selectedFile && !resultUrl && (
+        <div className="w-full space-y-4">
 
-          {/* Transparent PNG preview */}
+          {/* Original image */}
+          <div className="w-full border-2 border-gray-200 rounded-xl p-3 bg-gray-50">
+            {originalPreview && (
+              <img
+                src={originalPreview}
+                alt="Selected image"
+                className="w-full max-h-[450px] object-contain rounded-lg"
+              />
+            )}
+          </div>
+
+          {/* Remove Background Button */}
+          {!processing && (
+            <button
+              type="button"
+              onClick={handleRemoveBackground}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 px-5 rounded-xl font-bold text-lg transition shadow-md"
+            >
+              Remove Background
+            </button>
+          )}
+
+          {/* Processing */}
+          {processing && (
+            <div className="w-full space-y-3">
+
+              <div className="w-full bg-gray-200 h-3 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-blue-600 transition-all duration-300"
+                  style={{
+                    width: `${Math.max(progress, 5)}%`,
+                  }}
+                />
+              </div>
+
+              <div className="text-center font-semibold text-gray-700">
+                {status || 'Processing...'}
+              </div>
+
+              <div className="text-center text-sm text-gray-500">
+                {progress}%
+              </div>
+
+            </div>
+          )}
+
+          {/* Change image */}
+          {!processing && (
+            <button
+              type="button"
+              onClick={openFileSelector}
+              className="w-full bg-gray-600 hover:bg-gray-700 text-white py-3 rounded-xl font-semibold transition"
+            >
+              Change Image
+            </button>
+          )}
+
+        </div>
+      )}
+
+      {/* STEP 3 - Transparent Result */}
+      {resultUrl && (
+        <div className="w-full space-y-4">
+
+          {/* Transparent checkerboard */}
           <div
-            className="w-full border-2 border-neutral-200 rounded-xl overflow-hidden flex items-center justify-center p-4 min-h-[300px]"
+            className="w-full border-2 border-gray-200 rounded-xl p-3 overflow-hidden"
             style={{
               backgroundColor: '#ffffff',
-              backgroundImage:
-                'linear-gradient(45deg, #e5e7eb 25%, transparent 25%), linear-gradient(-45deg, #e5e7eb 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #e5e7eb 75%), linear-gradient(-45deg, transparent 75%, #e5e7eb 75%)',
+              backgroundImage: `
+                linear-gradient(45deg, #d1d5db 25%, transparent 25%),
+                linear-gradient(-45deg, #d1d5db 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #d1d5db 75%),
+                linear-gradient(-45deg, transparent 75%, #d1d5db 75%)
+              `,
               backgroundSize: '20px 20px',
               backgroundPosition:
                 '0 0, 0 10px, 10px -10px, -10px 0px',
@@ -200,35 +267,37 @@ export default function BackgroundRemoverPanel({
           >
             <img
               src={resultUrl}
-              alt="Background removed"
-              className="max-w-full max-h-[400px] object-contain"
+              alt="Background removed result"
+              className="w-full max-h-[450px] object-contain rounded-lg"
             />
           </div>
 
-          {/* Download */}
-          <a
-            href={resultUrl}
-            download="transparent-background.png"
-            className="block w-full text-center bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg transition-colors"
-          >
-            Download Transparent PNG
-          </a>
+          {/* Success message */}
+          <div className="text-center text-green-600 font-bold">
+            ✓ Background remove ہو گیا
+          </div>
 
-          {/* Add another image */}
+          {/* Download PNG */}
           <button
             type="button"
-            onClick={handleAddAnotherImage}
-            disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-bold py-3 rounded-lg transition-colors"
+            onClick={handleDownload}
+            className="w-full bg-green-600 hover:bg-green-700 text-white py-4 px-5 rounded-xl font-bold text-lg transition shadow-md"
+          >
+            Download PNG
+          </button>
+
+          {/* Another Image */}
+          <button
+            type="button"
+            onClick={handleAnotherImage}
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-bold transition"
           >
             Add Another Image
           </button>
 
-          <p className="text-xs text-neutral-500 text-center">
-            PNG format keeps the removed background transparent.
-          </p>
         </div>
       )}
+
     </div>
   );
 }

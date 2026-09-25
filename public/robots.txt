@@ -15,4 +15,4 @@ Allow: /background-remover
 Disallow: /api/
 
 # Sitemap location
-Sitemap: https://quick-image-tools.ai.studio/sitemap.xml
+Sitemap: https://quick-image-tools.pages.dev/sitemap.xml
