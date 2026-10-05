@@ -535,7 +535,7 @@ export function getPathForTab(tab: EditorTab | null): string {
 /**
  * Main website origin used for canonical URLs and structured data.
  */
-export const SITE_ORIGIN = 'https://quick-image-tools.ai.studio';
+export     const SITE_ORIGIN = 'https://quick-image-tools.pages.dev'
 
 /**
  * Updates document metadata, canonical URL,

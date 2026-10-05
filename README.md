@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-View your app in AI Studio: https://ai.studio/apps/937901ff-b43e-4637-81ab-8d1d60210db0
+Live App: https://quick-image-tools.pages.dev
 
 ## Run Locally
 
